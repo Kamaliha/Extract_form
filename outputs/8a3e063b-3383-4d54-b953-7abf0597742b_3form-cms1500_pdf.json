@@ -1,0 +1,9 @@
+{
+    "patient_name": "DIVYA",
+    "insured_id": "6767990",
+    "insurance_plan": null,
+    "diagnosis_code": "900.00",
+    "date_of_service": "05/25/25",
+    "procedure_code": "81123",
+    "total_charges": "900.00"
+}

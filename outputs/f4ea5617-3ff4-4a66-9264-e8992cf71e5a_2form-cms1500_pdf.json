@@ -1,0 +1,9 @@
+{
+    "patient_name": "SANJAY B",
+    "insured_id": "112233445",
+    "insurance_plan": "MEDICAID",
+    "diagnosis_code": "290",
+    "date_of_service": "21/10/26",
+    "procedure_code": "88614",
+    "total_charges": "550.00"
+}

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Claim Extractor</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+        font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    }
+
+    body {
+        margin: 0;
+        height: 100vh;
+        background: linear-gradient(135deg, #2563eb, #0ea5e9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .container {
+        width: 1000px;
+        max-width: 95%;
+        height: 520px;
+        background: #fff;
+        border-radius: 18px;
+        box-shadow: 0 25px 60px rgba(0,0,0,.25);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        overflow: hidden;
+    }
+
+    /* LEFT PANEL */
+    .left {
+        padding: 40px;
+        background: #f9fafb;
+    }
+
+    h1 {
+        margin-top: 0;
+        font-size: 26px;
+        color: #0f172a;
+    }
+
+    .subtitle {
+        color: #64748b;
+        margin-bottom: 30px;
+        line-height: 1.4;
+    }
+
+    .drop-zone {
+        border: 2px dashed #6366f1;
+        border-radius: 14px;
+        padding: 50px 20px;
+        text-align: center;
+        color: #1e293b;
+        cursor: pointer;
+        background: #eef2ff;
+        transition: 0.25s;
+    }
+
+    .drop-zone:hover {
+        background: #e0e7ff;
+    }
+
+    .drop-zone strong {
+        display: block;
+        font-size: 16px;
+        margin-bottom: 6px;
+    }
+
+    input[type="file"] {
+        display: none;
+    }
+
+    button {
+        width: 100%;
+        margin-top: 22px;
+        padding: 14px;
+        border-radius: 12px;
+        border: none;
+        background: #4f46e5;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: 0.25s;
+    }
+
+    button:hover {
+        background: #4338ca;
+    }
+
+    .status {
+        margin-top: 14px;
+        font-size: 14px;
+        color: #2563eb;
+    }
+
+    .loader {
+        display: none;
+        margin-top: 20px;
+        text-align: center;
+    }
+
+    .spinner {
+        width: 34px;
+        height: 34px;
+        border: 4px solid #c7d2fe;
+        border-top: 4px solid #4f46e5;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: auto;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* RIGHT PANEL */
+    .right {
+        background: #020617;
+        padding: 35px;
+        color: #22c55e;
+    }
+
+    .right h2 {
+        margin-top: 0;
+        font-size: 22px;
+        color: #22c55e;
+    }
+
+    pre {
+        background: #020617;
+        border-radius: 12px;
+        padding: 20px;
+        height: calc(100% - 40px);
+        overflow: auto;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #22c55e;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- LEFT -->
+    <div class="left">
+        <h1>Claim Extractor</h1>
+        <div class="subtitle">
+            Upload a PDF or image to extract structured claim data
+        </div>
+
+        <label class="drop-zone" id="dropZone">
+            <strong>Drag & drop your file here</strong>
+            or click to browse
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg">
+        </label>
+
+        <button onclick="upload()">Extract Claim Data</button>
+
+        <div class="status" id="status"></div>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right">
+        <h2>JSON Output</h2>
+        <pre id="output">{ }</pre>
+    </div>
+
+</div>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const dropZone = document.getElementById("dropZone");
+
+dropZone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropZone.style.background = "#c7d2fe";
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.style.background = "#eef2ff";
+});
+
+dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    fileInput.files = e.dataTransfer.files;
+    dropZone.style.background = "#eef2ff";
+});
+
+async function upload() {
+    if (!fileInput.files.length) {
+        alert("Please select a file");
+        return;
+    }
+
+    document.getElementById("status").innerText = "Processing...";
+    document.getElementById("loader").style.display = "block";
+    document.getElementById("output").textContent = "{ }";
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    try {
+        const res = await fetch("/upload", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await res.json();
+
+        document.getElementById("output").textContent =
+            JSON.stringify(data.data, null, 4);
+
+        document.getElementById("status").innerText = "Extraction successful ✅";
+    } catch (e) {
+        document.getElementById("status").innerText = "Extraction failed ❌";
+    }
+
+    document.getElementById("loader").style.display = "none";
+}
+</script>
+
+</body>
+</html>
