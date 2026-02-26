@@ -1,4 +1,8 @@
-import os, json, re, uuid
+import os
+import json
+import re
+import uuid
+
 from flask import Flask, render_template, request, jsonify
 import cv2
 import pytesseract
@@ -26,7 +30,7 @@ print("[INIT] Loading HuggingFace QA model...")
 qa = pipeline(
     "question-answering",
     model="distilbert-base-cased-distilled-squad",
-    device=-1
+    device=-1  # CPU
 )
 print("[INIT] QA model loaded")
 
@@ -40,6 +44,15 @@ def load_image(path):
 def full_ocr_text(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     return pytesseract.image_to_string(gray, config="--psm 3")
+
+def qa_fallback(question, context, threshold=0.3):
+    try:
+        result = qa(question=question, context=context)
+        if result["score"] >= threshold:
+            return result["answer"].strip()
+    except Exception:
+        pass
+    return None
 
 # ================= TEMPLATE EXTRACTION =================
 def extract_template(path):
@@ -63,34 +76,48 @@ def extract_template(path):
 
     raw = {k: ocr(v) for k, v in coords.items()}
 
-    def clean_name(t): return re.sub(r"[^A-Za-z ]", "", t).strip().upper() or None
+    def clean_name(t):
+        return re.sub(r"[^A-Za-z ]", "", t).strip().upper() or None
+
     def clean_id(t):
         if not t:
             return None
         return re.sub(r"[^A-Za-z0-9]", "", t).upper() or None
-    def cpt(t): return re.search(r"\b\d{5}\b", t).group() if re.search(r"\b\d{5}\b", t) else None
-    def amt(t): return re.search(r"\d+(\.\d{2})?", t.replace(" ", "")).group() if re.search(r"\d", t) else None
+
+    def cpt(t):
+        m = re.search(r"\b\d{5}\b", t)
+        return m.group() if m else None
+
+    def amt(t):
+        m = re.search(r"\d+(\.\d{2})?", t.replace(" ", ""))
+        return m.group() if m else None
+
     def date(t):
         t = t.replace("|", " ")
         m = re.search(r"\d{2}\s+\d{2}\s+\d{2,4}", t)
         return "/".join(m.group().split()) if m else None
+
     def insurance(t):
         t = t.upper()
-        if "MEDICARE" in t: return "MEDICARE"
-        if "MEDICAID" in t: return "MEDICAID"
-        if "TRICARE" in t or "CHAMPUS" in t: return "TRICARE"
+        if "MEDICARE" in t:
+            return "MEDICARE"
+        if "MEDICAID" in t:
+            return "MEDICAID"
+        if "TRICARE" in t or "CHAMPUS" in t:
+            return "TRICARE"
         return None
 
     return {
-        "patient_name": clean_name(raw["patient_name"]),
-        "insured_id": clean_id(raw["insured_id"]),
-        "insurance_plan": insurance(raw["insurance_plan"]),
-        "diagnosis_code": None,  # recovered later
-        "date_of_service": date(raw["date_of_service"]),
-        "procedure_code": cpt(raw["procedure_code"]),
-        "total_charges": amt(raw["total_charges"])
+        "patient_name": clean_name(raw.get("patient_name", "")),
+        "insured_id": clean_id(raw.get("insured_id", "")),
+        "insurance_plan": insurance(raw.get("insurance_plan", "")),
+        "diagnosis_code": None,
+        "date_of_service": date(raw.get("date_of_service", "")),
+        "procedure_code": cpt(raw.get("procedure_code", "")),
+        "total_charges": amt(raw.get("total_charges", ""))
     }
 
+# ================= ICD RECOVERY =================
 def recover_icd(text):
     for m in re.finditer(r"\b\d{3}(?:\.\d{1,2})?\b", text):
         return m.group()
@@ -103,21 +130,60 @@ def index():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    file = request.files["file"]
+    file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    filename = str(uuid.uuid4()) + "_" + file.filename
+    filename = f"{uuid.uuid4()}_{file.filename}"
     path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(path)
 
-    # Extract
+    # Primary extraction
     result = extract_template(path)
+
+    # Full OCR for fallback
     img = load_image(path)
     ocr_text = full_ocr_text(img)
 
-    # Recover diagnosis via regex
+    # Regex ICD recovery
     result["diagnosis_code"] = recover_icd(ocr_text)
+
+    # ================= QA FALLBACK =================
+    if result["patient_name"] is None:
+        result["patient_name"] = qa_fallback(
+            "What is the patient's name?",
+            ocr_text
+        )
+
+    if result["insured_id"] is None:
+        result["insured_id"] = qa_fallback(
+            "What is the insurance ID number?",
+            ocr_text
+        )
+
+    if result["insurance_plan"] is None:
+        result["insurance_plan"] = qa_fallback(
+            "What is the insurance plan?",
+            ocr_text
+        )
+
+    if result["date_of_service"] is None:
+        result["date_of_service"] = qa_fallback(
+            "What is the date of service?",
+            ocr_text
+        )
+
+    if result["procedure_code"] is None:
+        result["procedure_code"] = qa_fallback(
+            "What is the procedure code?",
+            ocr_text
+        )
+
+    if result["total_charges"] is None:
+        result["total_charges"] = qa_fallback(
+            "What is the total charge amount?",
+            ocr_text
+        )
 
     # Save JSON
     out_file = os.path.join(
